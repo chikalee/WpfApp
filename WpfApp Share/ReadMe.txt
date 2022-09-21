@@ -1,0 +1,1 @@
+程序在WpfApp文件夹中，WpfApp.exe，huanmUI插件安装到gh插件目录下，如果安装了官方版本请先备份然后删除。使用请看WpfApp/Examples。

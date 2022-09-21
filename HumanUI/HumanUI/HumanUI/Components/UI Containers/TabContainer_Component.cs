@@ -1,0 +1,310 @@
+﻿using System;
+using System.Collections.Generic;
+
+using Grasshopper.Kernel;
+using Grasshopper.Kernel.Parameters;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
+using MahApps.Metro.Controls;
+
+namespace HumanUI.Components.UI_Containers
+{
+    /// <summary>
+    /// Component to create a tabbed view to selectively show content. This is a variable param component so new tabs can be added on the fly.
+    /// </summary>
+    /// <seealso cref="Grasshopper.Kernel.GH_Component" />
+    /// <seealso cref="Grasshopper.Kernel.IGH_VariableParameterComponent" />
+    public class TabContainer_Component : GH_Component, IGH_VariableParameterComponent
+    {
+
+       
+        /// <summary>
+        /// Initializes a new instance of the TabContainer_Component class.
+        /// </summary>
+        public TabContainer_Component()
+            : base("Tabbed View", "Tabs",
+                "Creates a series of tabbed views that can contain UI element layouts",
+                "Human UI", "UI Containers")
+        {
+        }
+
+        /// <summary>
+        /// Registers all the input parameters for this component.
+        /// </summary>
+        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
+        {
+            pManager.AddTextParameter("Tab Names", "N", "The labels for the tabs you're creating.", GH_ParamAccess.list);
+            pManager[0].Optional = true;
+            pManager.AddNumberParameter("Tab Text Size", "S", "The font size for tab elements", GH_ParamAccess.item);
+             pManager[1].Optional = true;
+            pManager.AddTextParameter("Tab Icon Source","I","The path to an icon image - one per tab",GH_ParamAccess.list);
+           pManager[2].Optional = true;
+            pManager.AddGenericParameter("Tab 0", "T0", "The contents of the first tab", GH_ParamAccess.list);
+            VariableParameterMaintenance();
+        }
+
+        /// <summary>
+        /// Registers all the output parameters for this component.
+        /// </summary>
+        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
+        {
+            pManager.AddGenericParameter("Tabs", "T", "The Tab control", GH_ParamAccess.item);
+        }
+
+        /// <summary>
+        /// This is the method that actually does the work.
+        /// </summary>
+        /// <param name="DA">The DA object is used to retrieve from inputs and store in outputs.</param>
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            if (DA.Iteration > 0)
+            {
+                //this component doesn't know how to handle data trees - multiple sets of tabs will require multiple tab components.
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "It looks like you're trying to do something with data trees here that doesn't make sense.");
+                return;
+            }
+            //This is a complete list of elements to be included - We have a list of lists (with each list belonging to a particular tab)
+            List<List<UIElement_Goo>> tabList = new List<List<UIElement_Goo>>();
+
+            double fontSize = 26;
+            List<string> tabNames = new List<string>();
+            List<string> iconPaths = new List<string>();
+            int tabCount = 0;
+             DA.GetDataList<string>("Tab Icon Source", iconPaths);
+            if(DA.GetDataList<string>("Tab Names", tabNames)){
+                tabCount = tabNames.Count;
+            } else {
+                tabCount = iconPaths.Count;
+            }
+            
+
+
+
+            //get the data from the variable input params
+            for (int i = 3; i < Params.Input.Count; i++)
+            {
+                List<UIElement_Goo> currentTab = new List<UIElement_Goo>();
+                DA.GetDataList<UIElement_Goo>(i, currentTab);
+                tabList.Add(currentTab);
+            }
+                //validate that there's a tab name for every variable input
+            if (tabList.Count != tabCount)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "You don't have the same number of specified tab names (or icons) and tab inputs.");
+            }
+
+            //create the tab control
+            TabControl tabControl = new TabControl();
+            //TabControlHelper.SetIsUnderlined(tabControl, true);
+
+            bool setSize = DA.GetData<double>("Tab Text Size", ref fontSize);
+
+            var (customTabStyle,controlStyle)= CreateTabStyle();
+            tabControl.Style = controlStyle;
+            Console.WriteLine(tabControl.Style);
+
+            int tabIndex = 0;
+            //For each tab
+            foreach (List<UIElement_Goo> oneTab in tabList)
+            {
+                //create a tabItem
+                TabItem tabItem = new TabItem();
+                tabItem.Style = customTabStyle;
+                StackPanel tabHeader = new StackPanel();
+                if (tabIndex < iconPaths.Count)
+                {
+                    string imagePath = iconPaths[tabIndex];
+                    Image img = new Image();
+                    Uri filePath = new Uri(imagePath);
+                    BitmapImage bi = new BitmapImage(filePath);
+                    img.Source = bi;
+                    tabHeader.Children.Add(img);
+                    int pixWidth = bi.PixelWidth;
+                    int pixHeight = bi.PixelHeight;
+                    img.Height = fontSize;
+                    img.Width = fontSize * (pixWidth / pixHeight);
+                }
+
+                string tabName = "New Tab";
+                if (tabIndex < tabNames.Count) tabName = tabNames[tabIndex];
+
+               
+                tabHeader.Orientation = Orientation.Horizontal;
+                if(tabName!="New Tab"){
+                    TextBlock tb = new TextBlock();
+                    tb.Text = tabName;
+                    tb.FontSize = fontSize;
+                    tabHeader.Children.Add(tb);
+                }
+
+                if (iconPaths.Count == 0)
+                {
+                    if (setSize) HeaderedControlHelper.SetHeaderFontSize(tabItem, fontSize);
+                    tabItem.Header = tabName;
+                }
+                else
+                {
+                    tabItem.Header = tabHeader;
+                }
+
+                
+
+                //create a stackpanel
+                StackPanel sp = new StackPanel();
+                sp.Name = "GH_TabItem";
+                sp.Orientation = Orientation.Vertical;
+                foreach (UIElement_Goo u in oneTab)
+                {
+                    HUI_Util.removeParent(u.element);
+                    sp.Children.Add(u.element);
+                }
+
+                tabItem.Content = sp;
+                tabControl.Items.Add(tabItem);
+
+                tabIndex++;
+            }
+
+
+            DA.SetData("Tabs", new UIElement_Goo(tabControl, String.Format("Tab Control with {0} tabs", tabList.Count), InstanceGuid, DA.Iteration));
+            
+        }
+
+        private static Style CreateCTStyle1()
+        {
+            ResourceDictionary ControlsResDict = new ResourceDictionary();
+            ControlsResDict.Source =
+           new Uri("pack://application:,,,/HumanUIBaseApp;component/style/TabControlStyle.xaml", UriKind.RelativeOrAbsolute);
+            Style customTabStyle = new Style(typeof(TabControl), (Style)ControlsResDict["TabControlStyle1"]);
+            return customTabStyle;
+        }
+
+            /// <summary>
+            /// Creates the tab style.
+            /// </summary>
+            /// <returns>A Style object</returns>
+            private static (Style,Style) CreateTabStyle()
+        {
+            ResourceDictionary ControlsResDict = new ResourceDictionary();
+            ControlsResDict.Source =
+           new Uri("pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml", UriKind.RelativeOrAbsolute);
+            ResourceDictionary ColorsResDict = new ResourceDictionary();
+            ColorsResDict.Source =
+           new Uri("pack://application:,,,/MahApps.Metro;component/Styles/Themes/Light.Amber.xaml", UriKind.RelativeOrAbsolute);
+            ResourceDictionary ColorsResDict1 = new ResourceDictionary();
+            ColorsResDict1.Source =
+            new Uri("pack://application:,,,/MahApps.Metro;component/Styles/Themes/Light.Yellow.xaml", UriKind.RelativeOrAbsolute);
+            Style customTabStyle = new Style(typeof(TabItem), (Style)ControlsResDict["MahApps.Styles.TabItem"]);
+            customTabStyle.TargetType = typeof(TabItem);
+
+            Style controlStyle = new Style(typeof(TabControl), (Style)ControlsResDict["MahApps.Styles.TabControl.Animated"]);
+
+            Setter bkSetter = new Setter();
+            bkSetter.Property = TabControl.BackgroundProperty;
+            bkSetter.Value = ColorsResDict["MahApps.Brushes.Accent4"];
+            controlStyle.Setters.Add(bkSetter);
+
+            //is selected trigger
+            Trigger selectionTrigger = new Trigger();
+            selectionTrigger.Property = TabItem.IsSelectedProperty;
+            selectionTrigger.Value = true;
+
+            Setter setter = new Setter();
+            setter.Property = TabItem.BackgroundProperty;
+            setter.Value = ColorsResDict["MahApps.Brushes.Accent4"];
+            selectionTrigger.Setters.Add(setter);
+
+            Trigger selectionTrigger1 = new Trigger();
+            selectionTrigger1.Property = TabItem.IsSelectedProperty;
+            selectionTrigger1.Value = false;
+            Setter setter1 = new Setter();
+
+            setter1.Property = TabItem.BackgroundProperty;
+            setter1.Value = ColorsResDict1["MahApps.Brushes.Accent4"];
+            selectionTrigger1.Setters.Add(setter1);
+
+
+            //hover trigger
+            Trigger hoverTrigger = new Trigger();
+            hoverTrigger.Property = TabItem.IsMouseOverProperty;
+            hoverTrigger.Value = true;
+
+            Setter hoverSetter = new Setter();
+            hoverSetter.Property = TabItem.OpacityProperty;
+            hoverSetter.Value = 0.65;
+
+            hoverTrigger.Setters.Add(hoverSetter);
+
+            customTabStyle.Triggers.Add(selectionTrigger);
+            customTabStyle.Triggers.Add(selectionTrigger1);
+            customTabStyle.Triggers.Add(hoverTrigger);
+            return (customTabStyle,controlStyle);
+        }
+
+        /// <summary>
+        /// Provides an Icon for the component.
+        /// </summary>
+        protected override System.Drawing.Bitmap Icon => Properties.Resources.TabControl;
+
+        /// <summary>
+        /// Gets the unique ID for this component. Do not change this ID after release.
+        /// </summary>
+        public override Guid ComponentGuid => new Guid("{EAF93260-86B3-4AE7-82D2-58E683DEAE7B}");
+
+        #region VariableParameterImplementation 
+
+        public bool CanInsertParameter(GH_ParameterSide side, int index)
+        {
+            if (side == GH_ParameterSide.Output) return false;
+            if (index == 0) return false;
+            if (index == 1) return false;
+            if (index == 2) return false;
+            return true;
+        }
+
+        public bool CanRemoveParameter(GH_ParameterSide side, int index)
+        {
+           if (side == GH_ParameterSide.Output) return false;
+           if (Params.Input.Count <= 4) return false;
+            if (index == 0) return false;
+            if (index == 1) return false;
+            if (index == 2) return false;
+            return true;
+        }
+
+        public IGH_Param CreateParameter(GH_ParameterSide side, int index)  
+        {
+            Param_GenericObject input = new Param_GenericObject();
+            input.Optional = true;
+            Params.RegisterInputParam(input, index);
+            return input;
+        }
+
+        public bool DestroyParameter(GH_ParameterSide side, int index)
+        {
+
+            return true;
+        }
+
+        public void VariableParameterMaintenance()
+        {
+            for (int i = 3; i < Params.Input.Count;i++ )
+            {
+                IGH_Param param = Params.Input[i];
+
+                param.NickName = String.Format("T{0}", i-3);
+                param.Name = String.Format("Tab {0}", i-3);
+                param.Description = String.Format("The ui elements to include in tab {0}", i - 3);
+                param.Access = GH_ParamAccess.list;
+                param.Optional = true;
+                param.DataMapping = GH_DataMapping.Flatten;
+
+            }
+        }
+
+
+        #endregion
+
+    }
+}
